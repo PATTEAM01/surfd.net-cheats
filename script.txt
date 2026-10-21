@@ -1,0 +1,284 @@
+(() => {
+    'use strict';
+
+    const S = window.__surfd_session;
+    if (!S) {
+        console.error('[docket] brak sesji — wejdź na mapę i spróbuj ponownie.');
+        return;
+    }
+    if (window.__docket_cheat) {
+        console.log('[docket] cheat jest już aktywny.');
+        return;
+    }
+    window.__docket_cheat = true;
+
+    const M = S.movement;
+    const T = S.timer;
+    const cfg = S.config;
+
+    // Zapamiętaj oryginalne wartości do resetu
+    const origCfg = {
+        airAccelerate: cfg.airAccelerate,
+        maxSpeed: cfg.maxSpeed,
+        airCap: cfg.airCap,
+        gravity: cfg.gravity,
+        friction: cfg.friction,
+        maxVelocity: cfg.maxVelocity
+    };
+
+    // ── UI ────────────────────────────────────────────────────────
+    const panel = document.createElement('div');
+    panel.id = 'docket-panel';
+    panel.style.cssText = `
+        position: fixed; top: 12px; right: 12px; z-index: 2147483647;
+        background: rgba(8,16,12,0.96); color: #c8e6c9;
+        font: 12px/1.6 monospace; padding: 12px 14px;
+        border: 1px solid #2e7d32; border-radius: 6px;
+        min-width: 290px; max-width: 330px; user-select: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+        <div style="font-weight:bold;margin-bottom:6px;color:#81c784;display:flex;justify-content:space-between;">
+            <span>SURFD CHEAT</span>
+            <span style="color:#555;font-weight:normal;">[docket]</span>
+        </div>
+        <div id="d-stats" style="color:#aaa;margin-bottom:10px;font-size:11px;line-height:1.4;background:rgba(0,0,0,0.3);padding:4px;border-radius:3px;"></div>
+
+        <label>airAccelerate <input id="d-accel" type="range" min="150" max="5000" step="10" style="width:100%"></label>
+        <div id="d-accel-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
+
+        <label>maxSpeed <input id="d-max" type="range" min="260" max="8000" step="10" style="width:100%"></label>
+        <div id="d-max-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
+
+        <label>airCap <input id="d-aircap" type="range" min="30" max="1500" step="5" style="width:100%"></label>
+        <div id="d-aircap-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
+
+        <label>gravity <input id="d-grav" type="range" min="0" max="800" step="10" style="width:100%"></label>
+        <div id="d-grav-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
+
+        <label>friction <input id="d-fric" type="range" min="0" max="4" step="0.1" style="width:100%"></label>
+        <div id="d-fric-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
+
+        <hr style="border:0;border-top:1px solid #333;margin:8px 0;">
+
+        <label style="display:block;margin-bottom:4px;">
+            <input id="d-instant" type="checkbox" style="vertical-align:middle;"> <b>Instant Speed</b> (w powietrzu)
+        </label>
+        <label style="display:block;margin-bottom:4px;">
+            <input id="d-fly" type="checkbox" style="vertical-align:middle;"> <b>Fly Mode</b> (względem kamery)
+        </label>
+        <label style="display:block;margin-bottom:4px;">
+            <input id="d-noclip" type="checkbox" style="vertical-align:middle;"> <b>No-clip</b> (przez ściany)
+        </label>
+        <label style="display:block;margin-bottom:4px;">
+            <input id="d-timer" type="checkbox" style="vertical-align:middle;"> <b>Freeze Timer</b> (stop czasu)
+        </label>
+        <label style="display:block;margin-bottom:4px;">
+            <input id="d-bhop" type="checkbox" style="vertical-align:middle;"> <b>Auto-Bhop</b> (skacze sam)
+        </label>
+        
+        <div style="margin-top:8px;padding:6px;background:#1b3a1b;border:1px solid #2e7d32;border-radius:4px;text-align:center;">
+            <b>Klawisz C</b> = natychmiastowy Finish
+        </div>
+
+        <button id="d-reset" style="margin-top:10px;width:100%;background:#1b3a1b;color:#c8e6c9;border:1px solid #2e7d32;padding:6px;cursor:pointer;border-radius:4px;font-weight:bold;">RESET DO ORYGINAŁU</button>
+    `;
+    document.documentElement.appendChild(panel);
+
+    const $ = id => panel.querySelector(id);
+    const accel = $('#d-accel'), max = $('#d-max'), aircap = $('#d-aircap'),
+          grav = $('#d-grav'), fric = $('#d-fric');
+
+    accel.value = cfg.airAccelerate;
+    max.value = cfg.maxSpeed;
+    aircap.value = cfg.airCap;
+    grav.value = cfg.gravity;
+    fric.value = cfg.friction;
+
+    function refreshVals() {
+        $('#d-accel-val').textContent = `= ${accel.value}`;
+        $('#d-max-val').textContent = `= ${max.value}`;
+        $('#d-aircap-val').textContent = `= ${aircap.value}`;
+        $('#d-grav-val').textContent = `= ${grav.value}`;
+        $('#d-fric-val').textContent = `= ${fric.value}`;
+    }
+    refreshVals();
+
+    function applyCfg() {
+        const vals = {
+            airAccelerate: +accel.value,
+            maxSpeed: +max.value,
+            airCap: +aircap.value,
+            gravity: +grav.value,
+            friction: +fric.value,
+        };
+        Object.assign(cfg, vals);
+        if (M?.config) Object.assign(M.config, vals);
+        refreshVals();
+    }
+
+    accel.oninput = applyCfg;
+    max.oninput = applyCfg;
+    aircap.oninput = applyCfg;
+    grav.oninput = applyCfg;
+    fric.oninput = applyCfg;
+
+    let instant = false;
+    let flyMode = false;
+    let noclip = false;
+    let freezeTimer = false;
+    let autoBhop = false;
+    let forceFinish = false;
+
+    $('#d-instant').onchange = e => { instant = e.target.checked; };
+    $('#d-fly').onchange = e => { flyMode = e.target.checked; };
+    $('#d-noclip').onchange = e => { noclip = e.target.checked; };
+    $('#d-timer').onchange = e => { freezeTimer = e.target.checked; };
+    $('#d-bhop').onchange = e => { autoBhop = e.target.checked; };
+
+    // ── GŁÓWNA PĘTLA (STEP) ──────────────────────────────────────
+    const origStep = S.step;
+    S.step = function (cmd) {
+        // 1. Auto-bhop
+        if (autoBhop && this.state.grounded) {
+            cmd.jump = true;
+        }
+        
+        // 2. Fly mode (względem kamery)
+        if (flyMode) {
+            this.state.velocity.z = 0;
+            this.state.grounded = false;
+            const spd = 800; 
+            
+            const yawRad = cmd.yaw * Math.PI / 180;
+            const fwdX = Math.cos(yawRad);
+            const fwdY = Math.sin(yawRad);
+            const rightX = Math.sin(yawRad);
+            const rightY = -Math.cos(yawRad);
+
+            const f = cmd.forward / 400;
+            this.state.position.x += (fwdX * f) * spd * this.config.dt;
+            this.state.position.y += (fwdY * f) * spd * this.config.dt;
+
+            const s = cmd.side / 400;
+            this.state.position.x += (rightX * s) * spd * this.config.dt;
+            this.state.position.y += (rightY * s) * spd * this.config.dt;
+
+            if (cmd.jump) this.state.position.z += spd * this.config.dt;
+            if (cmd.duck) this.state.position.z -= spd * this.config.dt;
+        }
+
+        const result = origStep.call(this, cmd);
+
+        // 3. Instant speed
+        if (instant && !this.state.grounded) {
+            const targetMax = Math.max(+max.value, +aircap.value * 10);
+            const v = this.state.velocity;
+            const sp = Math.hypot(v.x, v.y);
+            
+            if (sp > 0.1) {
+                const scale = targetMax / sp;
+                v.x *= scale;
+                v.y *= scale;
+            } else {
+                const yaw = cmd.yaw * Math.PI / 180;
+                v.x = Math.cos(yaw) * targetMax;
+                v.y = Math.sin(yaw) * targetMax;
+            }
+            
+            if (this.config.maxVelocity < targetMax) {
+                this.config.maxVelocity = targetMax * 1.5;
+            }
+        }
+
+        // 4. Force Finish (Manualny trigger)
+        if (forceFinish && this.timer.state.phase === 'running') {
+            const finishZone = this.timer.zones.find(z => z.kind === 'finish');
+            if (finishZone) {
+                this.state.position.x = (finishZone.min.x + finishZone.max.x) / 2;
+                this.state.position.y = (finishZone.min.y + finishZone.max.y) / 2;
+                this.state.position.z = (finishZone.min.z + finishZone.max.z) / 2;
+                
+                this.state.velocity.x = 0;
+                this.state.velocity.y = 0;
+                this.state.velocity.z = 0;
+                
+                const finishCmd = { ...cmd, forward: 0, side: 0, jump: false, duck: false };
+                origStep.call(this, finishCmd);
+                
+                console.log('[docket] wymuszono zakończenie');
+            }
+            forceFinish = false;
+        }
+
+        return result;
+    };
+
+    // ── FREEZE TIMER ─────────────────────────────────────────────
+    const origTimerStep = T.step.bind(T);
+    T.step = function (...args) {
+        if (freezeTimer) return [];
+        return origTimerStep(...args);
+    };
+
+    // ── NO-CLIP (KOLIZJE) ────────────────────────────────────────
+    if (M?.world && !M.world.__docket_noclip) {
+        M.world.__docket_noclip = true;
+        const origTrace = M.world.trace.bind(M.world);
+        M.world.trace = function (from, to, hull) {
+            if (noclip) {
+                return { fraction: 1, end: { ...to }, normal: { x:0,y:0,z:0 },
+                         startSolid: false, allSolid: false, brush: null };
+            }
+            return origTrace(from, to, hull);
+        };
+    }
+
+    // ── KLAWISZ C (FINISH) ───────────────────────────────────────
+    document.addEventListener('keydown', e => {
+        if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            // Tylko gdy menu jest ukryte (jesteśmy w grze) i bieg trwa
+            if (S.timer.state.phase === 'running' && document.getElementById('menu').hidden) {
+                e.preventDefault();
+                e.stopPropagation();
+                forceFinish = true;
+                console.log('[docket] Finish na klawisz C...');
+            }
+        }
+    }, true);
+
+    // ── RESET ────────────────────────────────────────────────────
+    $('#d-reset').onclick = () => {
+        Object.assign(cfg, origCfg);
+        if (M?.config) Object.assign(M.config, origCfg);
+        
+        accel.value = origCfg.airAccelerate;
+        max.value = origCfg.maxSpeed;
+        aircap.value = origCfg.airCap;
+        grav.value = origCfg.gravity;
+        fric.value = origCfg.friction;
+        
+        instant = flyMode = noclip = freezeTimer = autoBhop = false;
+        ['instant', 'fly', 'noclip', 'timer', 'bhop'].forEach(id => $('#d-' + id).checked = false);
+        
+        refreshVals();
+        console.log('[docket] przywrócono oryginalne ustawienia.');
+    };
+
+    // ── DIAGNOSTYKA ──────────────────────────────────────────────
+    setInterval(() => {
+        const v = S.state.velocity;
+        const p = S.state.position;
+        const sp = Math.hypot(v.x, v.y);
+        const el = $('#d-stats');
+        if (el) {
+            el.innerHTML = `map: <b style="color:#fff">${S.map.id}</b><br>
+                prędkość: <b style="color:#81c784;font-size:13px">${sp.toFixed(1)}</b> u/s<br>
+                pos: ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}<br>
+                na ziemi: ${S.state.grounded ? 'TAK' : '<span style="color:#81c784">LOT</span>'}<br>
+                czas: <b style="color:#fff">${S.timer.state.elapsed.toFixed(3)}</b>s`;
+        }
+    }, 100);
+
+    console.log('%c[docket] PEŁNY CHEAT AKTYWNY', 'color:#81c784;font-weight:bold;font-size:14px');
+})();

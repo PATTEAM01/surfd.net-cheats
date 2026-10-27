@@ -1,284 +1,1329 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SURFD DOCKET — FULL CHEAT + KNIFE SKIN CHANGER (single file)
+   Krunker-style low-poly viewmodel. Wklej wszystko, potem odpal grę.
+   ═══════════════════════════════════════════════════════════════════════ */
 (() => {
     'use strict';
 
     const S = window.__surfd_session;
-    if (!S) {
-        console.error('[docket] brak sesji — wejdź na mapę i spróbuj ponownie.');
-        return;
-    }
-    if (window.__docket_cheat) {
-        console.log('[docket] cheat jest już aktywny.');
-        return;
-    }
+    if (!S) { console.error('[docket] brak sesji — wejdź na mapę i spróbuj ponownie.'); return; }
+    if (window.__docket_cheat) { console.log('[docket] cheat już aktywny.'); return; }
     window.__docket_cheat = true;
 
     const M = S.movement;
     const T = S.timer;
     const cfg = S.config;
 
-    // Zapamiętaj oryginalne wartości do resetu
-    const origCfg = {
-        airAccelerate: cfg.airAccelerate,
-        maxSpeed: cfg.maxSpeed,
-        airCap: cfg.airCap,
-        gravity: cfg.gravity,
-        friction: cfg.friction,
-        maxVelocity: cfg.maxVelocity
+    // ── ORYGINAŁY ───────────────────────────────────────────────
+    const CFG_KEYS = ['airAccelerate','maxSpeed','airCap','gravity','friction','maxVelocity'];
+    const origCfg = {};
+    CFG_KEYS.forEach(k => { origCfg[k] = cfg[k]; });
+
+    // ── STAN GŁÓWNY ─────────────────────────────────────────────
+    const st = {
+        instant: false, flyMode: false, noclip: false,
+        freezeTimer: false, autoBhop: false, autoStrafe: false,
+        infJump: false, autoRestart: false, spin: false,
+        paused: false, crosshair: false, minimap: false,
+        fullbright: false, forceFinish: false,
+        spinSpeed: 180, speedBoost: 1, timeScale: 1,
+        fullbrightIntensity: 1.6, fov: 90,
+        crosshairColor: '#00ff88',
+        startPos: null, savedPos: null,
+        trail: []
     };
 
-    // ── UI ────────────────────────────────────────────────────────
+    // ── STAN NOŻA ───────────────────────────────────────────────
+    const kst = {
+        enabled: false, type: 'karambit', finish: 'fade',
+        wear: 0.05, statTrak: 0, statTrakOn: true,
+        swinging: false, lastSwing: 0, swingKind: 'slash'
+    };
+
+    // ── SHAPES (low-poly Krunker style) ─────────────────────────
+    // Każdy shape to: blade path, spine/edge split, handle path, guard path.
+    // viewBox: 0 0 300 420
+    const SHAPES = {
+        karambit: {
+            name: 'Karambit',
+            blade: 'M152,42 L108,98 L100,250 L200,250 L198,132 L170,42 Z',
+            bladeLeft: 'M152,42 L108,98 L100,250 L185,250 Z',
+            bladeTip: 'M152,42 L170,42 L198,132 L185,250 Z',
+            handle: 'M112,268 L188,268 L184,380 Q182,396 150,396 Q118,396 116,380 Z',
+            guard: 'M80,240 L220,240 L226,268 L74,268 Z',
+            groove: 'M155,70 L162,240'
+        },
+        m9: {
+            name: 'M9 Bayonet',
+            blade: 'M150,32 L112,95 L100,250 L200,250 L200,120 L176,32 Z',
+            bladeLeft: 'M150,32 L112,95 L100,250 L188,250 Z',
+            bladeTip: 'M150,32 L176,32 L200,120 L188,250 Z',
+            handle: 'M108,268 L192,268 L188,382 Q186,398 150,398 Q114,398 112,382 Z',
+            guard: 'M78,238 L222,238 L228,268 L72,268 Z',
+            groove: 'M153,66 L160,242'
+        },
+        bowie: {
+            name: 'Bowie',
+            blade: 'M150,28 L104,108 L96,250 L204,250 L204,140 L178,28 Z',
+            bladeLeft: 'M150,28 L104,108 L96,250 L188,250 Z',
+            bladeTip: 'M150,28 L178,28 L204,140 L188,250 Z',
+            handle: 'M110,268 L190,268 L186,382 Q184,398 150,398 Q116,398 114,382 Z',
+            guard: 'M78,240 L222,240 L228,268 L72,268 Z',
+            groove: 'M156,68 L162,240'
+        },
+        talon: {
+            name: 'Talon',
+            blade: 'M158,45 L106,102 L98,250 L200,250 L198,130 L172,45 Z',
+            bladeLeft: 'M158,45 L106,102 L98,250 L182,250 Z',
+            bladeTip: 'M158,45 L172,45 L198,130 L182,250 Z',
+            handle: 'M112,268 L188,268 L184,380 Q182,396 150,396 Q118,396 116,380 Z',
+            guard: 'M78,238 L222,238 L228,268 L72,268 Z',
+            groove: 'M158,72 L162,240'
+        },
+        flip: {
+            name: 'Flip',
+            blade: 'M150,36 L112,100 L100,250 L200,250 L200,128 L174,36 Z',
+            bladeLeft: 'M150,36 L112,100 L100,250 L186,250 Z',
+            bladeTip: 'M150,36 L174,36 L200,128 L186,250 Z',
+            handle: 'M112,268 L188,268 L184,378 Q182,394 150,394 Q118,394 116,378 Z',
+            guard: 'M80,240 L220,240 L226,268 L74,268 Z',
+            groove: 'M154,66 L160,240'
+        },
+        gut: {
+            name: 'Gut',
+            blade: 'M150,40 L114,105 L102,250 L198,250 L198,135 L174,40 Z',
+            bladeLeft: 'M150,40 L114,105 L102,250 L185,250 Z',
+            bladeTip: 'M150,40 L174,40 L198,135 L185,250 Z',
+            handle: 'M112,268 L188,268 L184,378 Q182,394 150,394 Q118,394 116,378 Z',
+            guard: 'M80,240 L220,240 L226,268 L74,268 Z',
+            groove: 'M154,68 L160,240'
+        },
+        huntsman: {
+            name: 'Huntsman',
+            blade: 'M150,30 L108,102 L98,250 L202,250 L202,130 L178,30 Z',
+            bladeLeft: 'M150,30 L108,102 L98,250 L188,250 Z',
+            bladeTip: 'M150,30 L178,30 L202,130 L188,250 Z',
+            handle: 'M108,268 L192,268 L188,382 Q186,398 150,398 Q114,398 112,382 Z',
+            guard: 'M78,238 L222,238 L228,268 L72,268 Z',
+            groove: 'M156,66 L162,240'
+        },
+        classic: {
+            name: 'Classic',
+            blade: 'M150,38 L114,100 L102,250 L198,250 L198,132 L176,38 Z',
+            bladeLeft: 'M150,38 L114,100 L102,250 L186,250 Z',
+            bladeTip: 'M150,38 L176,38 L198,132 L186,250 Z',
+            handle: 'M112,268 L188,268 L184,378 Q182,394 150,394 Q118,394 116,378 Z',
+            guard: 'M80,240 L220,240 L226,268 L74,268 Z',
+            groove: 'M154,66 L160,240'
+        }
+    };
+
+    // ── FINISHES ────────────────────────────────────────────────
+    // blade: gradient stops (2-5). guard/handle: solid hex.
+    const FINISHES = {
+        vanilla:            { name: 'Vanilla',        blade: ['#8a949e','#4a525a'],                          guard: '#2a2a2a', handle: '#1a1a1a' },
+        fade:               { name: 'Fade',           blade: ['#ff2e88','#ff88cc','#ffaa00','#ffee00'],       guard: '#1a1a1a', handle: '#0a0a0a' },
+        case_hardened:      { name: 'Case Hardened',  blade: ['#4a6bc4','#7a9ee0','#8a7038','#3a5fa8'],       guard: '#333333', handle: '#1a1a1a' },
+        doppler:            { name: 'Doppler',        blade: ['#b933ff','#5a1a8a','#2a0a5a','#b933ff'],       guard: '#0a0a0a', handle: '#000000' },
+        sapphire:           { name: 'Sapphire',       blade: ['#0066ff','#3388ff','#0044cc','#0066ff'],       guard: '#050510', handle: '#000000' },
+        ruby:               { name: 'Ruby',           blade: ['#ff0033','#ff3355','#aa0022','#ff0033'],       guard: '#1a0505', handle: '#000000' },
+        black_pearl:        { name: 'Black Pearl',    blade: ['#2a2a3a','#6a4a8a','#3a3a4a','#5a3a7a'],       guard: '#0a0a0a', handle: '#000000' },
+        marble_fade:        { name: 'Marble Fade',    blade: ['#ff2e2e','#ffaa00','#00ccff','#ff2e2e'],       guard: '#1a1a1a', handle: '#0a0a0a' },
+        tiger_tooth:        { name: 'Tiger Tooth',    blade: ['#ffaa00','#1a0a00','#ff8800','#ffaa00'],       guard: '#1a0a00', handle: '#050202' },
+        crimson_web:        { name: 'Crimson Web',    blade: ['#8b0000','#c00000','#2a0a0a','#8b0000'],       guard: '#0a0202', handle: '#050101' },
+        slaughter:          { name: 'Slaughter',      blade: ['#cc0022','#ff2e55','#8b0000','#ff2e55'],       guard: '#1a0505', handle: '#0a0202' },
+        gamma_doppler:      { name: 'Gamma Doppler',  blade: ['#00ff88','#004422','#00cc66','#00ff88'],       guard: '#021a0a', handle: '#000a05' },
+        lore:               { name: 'Lore',           blade: ['#2a4a1a','#c4a44a','#2a4a1a','#c4a44a'],       guard: '#1a1a0a', handle: '#0a0a05' },
+        ultraviolet:        { name: 'Ultraviolet',    blade: ['#5a1a8a','#1a0a2a','#3a1a5a'],                 guard: '#0a0212', handle: '#05010a' },
+        blue_steel:         { name: 'Blue Steel',     blade: ['#4a5a8a','#2a3a5a','#4a5a8a'],                 guard: '#1a1a2a', handle: '#0a0a15' },
+        autotronic:         { name: 'Autotronic',     blade: ['#8a0000','#1a1a1a','#5a0000','#1a1a1a'],       guard: '#0a0a0a', handle: '#050505' },
+        freehand:           { name: 'Freehand',       blade: ['#4a1a8a','#0066ff','#4a1a8a','#0066ff'],       guard: '#0a051a', handle: '#050210' },
+        bright_water:       { name: 'Bright Water',   blade: ['#0066cc','#aaccff','#0066cc','#aaccff'],       guard: '#0a1a2a', handle: '#05101a' },
+        night:              { name: 'Night',          blade: ['#0a0a0a','#1a1a2a','#0a0a0a'],                 guard: '#050505', handle: '#020202' },
+        boreal_forest:      { name: 'Boreal Forest',  blade: ['#2a3a1a','#4a5a2a','#2a3a1a','#4a5a2a'],       guard: '#0a1a05', handle: '#051002' },
+        stained:            { name: 'Stained',        blade: ['#8a7a6a','#5a4a3a','#8a7a6a'],                 guard: '#2a1a0a', handle: '#150d05' },
+        urban_rubble:       { name: 'Urban Rubble',   blade: ['#5a5a6a','#8a8a9a','#3a3a4a','#7a7a8a'],       guard: '#1a1a2a', handle: '#0a0a15' }
+    };
+
+    // ── SHADE HELPER ────────────────────────────────────────────
+    function shade(hex, amt) {
+        const n = parseInt(hex.slice(1), 16);
+        let r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+        if (amt > 0) {
+            r = r + (255 - r) * amt; g = g + (255 - g) * amt; b = b + (255 - b) * amt;
+        } else {
+            r = r * (1 + amt); g = g * (1 + amt); b = b * (1 + amt);
+        }
+        return `rgb(${r|0},${g|0},${b|0})`;
+    }
+
+    // ── CSS ─────────────────────────────────────────────────────
+    const styleEl = document.createElement('style');
+    styleEl.id = 'docket-styles';
+    styleEl.textContent = `
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap');
+
+        @keyframes dk-rotate    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes dk-in        { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes dk-pulse     { 0%,100% { text-shadow: 0 0 8px currentColor; } 50% { text-shadow: 0 0 18px currentColor, 0 0 28px currentColor; } }
+        @keyframes dk-shimmer   { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+        /* ── PANEL ────────────────────────────────────────────── */
+        #docket-panel {
+            position: fixed; top: 16px; right: 16px; z-index: 2147483647;
+            width: 350px; max-height: 90vh; overflow: hidden;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 12px; line-height: 1.5;
+            color: #e8e8f0; user-select: none;
+            animation: dk-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+            isolation: isolate;
+        }
+        #docket-panel::before {
+            content: ''; position: absolute; inset: -2px; z-index: -1;
+            background: conic-gradient(from 0deg, #00e5ff, #b933ff, #ff2e88, #ffaa00, #00ff88, #00e5ff);
+            border-radius: 16px; animation: dk-rotate 6s linear infinite;
+            filter: blur(4px); opacity: 0.85;
+        }
+        #docket-panel::after {
+            content: ''; position: absolute; inset: 0; z-index: -1;
+            background: linear-gradient(180deg, rgba(10,10,20,0.97), rgba(6,6,14,0.99));
+            border-radius: 14px;
+            backdrop-filter: blur(20px) saturate(1.4);
+            -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        }
+        .dk-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 14px 10px; cursor: grab;
+            background: linear-gradient(90deg, rgba(0,229,255,0.08), rgba(185,51,255,0.08));
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px 14px 0 0;
+        }
+        .dk-header:active { cursor: grabbing; }
+        .dk-title {
+            font-weight: 800; font-size: 13px; letter-spacing: 1.2px;
+            background: linear-gradient(90deg, #00e5ff, #b933ff, #ff2e88);
+            background-size: 200% auto;
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: dk-shimmer 4s linear infinite;
+        }
+        .dk-badge {
+            font-size: 9px; padding: 2px 6px; border-radius: 4px;
+            background: rgba(0,229,255,0.15); color: #00e5ff;
+            border: 1px solid rgba(0,229,255,0.3); margin-left: 6px;
+            letter-spacing: 0.5px; -webkit-text-fill-color: #00e5ff;
+        }
+        .dk-btn-icon {
+            background: transparent; border: none; color: #888;
+            cursor: pointer; font-family: inherit; font-size: 14px;
+            padding: 2px 6px; border-radius: 4px; transition: all 0.2s;
+        }
+        .dk-btn-icon:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+        .dk-body { padding: 12px 14px; max-height: calc(90vh - 60px); overflow-y: auto; }
+        .dk-body::-webkit-scrollbar { width: 6px; }
+        .dk-body::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+        .dk-body::-webkit-scrollbar-thumb { background: linear-gradient(#00e5ff, #b933ff); border-radius: 3px; }
+
+        .dk-stats {
+            padding: 10px 12px; margin-bottom: 12px; border-radius: 8px;
+            background: linear-gradient(135deg, rgba(0,229,255,0.06), rgba(185,51,255,0.06));
+            border: 1px solid rgba(255,255,255,0.06);
+            font-size: 11px; color: #aaa;
+        }
+        .dk-speed { color: #00ff88; font-size: 16px; font-weight: 800; animation: dk-pulse 1.6s ease-in-out infinite; }
+        .dk-speed.flying { color: #b933ff; }
+        .dk-stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .dk-stat-row span:first-child { color: #666; }
+        .dk-stat-row b { color: #fff; font-weight: 600; }
+
+        .dk-tabs { display: flex; gap: 3px; margin-bottom: 12px; }
+        .dk-tab {
+            flex: 1; padding: 7px 2px; text-align: center;
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 6px; cursor: pointer; color: #888;
+            font-size: 9px; font-weight: 600; letter-spacing: 0.3px;
+            transition: all 0.2s; font-family: inherit;
+        }
+        .dk-tab:hover { color: #ccc; background: rgba(255,255,255,0.06); }
+        .dk-tab.active {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(0,229,255,0.25), rgba(185,51,255,0.25));
+            border-color: rgba(0,229,255,0.4);
+            box-shadow: 0 0 12px rgba(0,229,255,0.3);
+        }
+
+        .dk-pane { display: none; animation: dk-in 0.2s ease-out; }
+        .dk-pane.active { display: block; }
+
+        .dk-section-title {
+            font-size: 10px; font-weight: 700; color: #555;
+            letter-spacing: 1.2px; text-transform: uppercase;
+            margin: 8px 0 6px; padding-top: 6px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        .dk-section-title:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+
+        .dk-row { margin-bottom: 10px; }
+        .dk-row-label {
+            display: flex; justify-content: space-between;
+            font-size: 11px; margin-bottom: 4px;
+        }
+        .dk-row-label span:first-child { color: #aaa; }
+        .dk-row-label span:last-child { color: #00e5ff; font-weight: 600; }
+
+        input[type="range"].dk-slider {
+            width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+            background: linear-gradient(90deg, #00e5ff, #b933ff) 0/var(--pct, 50%) 100% no-repeat, rgba(255,255,255,0.06);
+            border-radius: 2px; outline: none; cursor: pointer;
+        }
+        input[type="range"].dk-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #fff; cursor: pointer;
+            box-shadow: 0 0 8px #00e5ff, 0 0 16px rgba(0,229,255,0.5);
+            transition: transform 0.15s;
+        }
+        input[type="range"].dk-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        input[type="range"].dk-slider::-moz-range-thumb {
+            width: 14px; height: 14px; border-radius: 50%; border: none;
+            background: #fff; cursor: pointer;
+            box-shadow: 0 0 8px #00e5ff, 0 0 16px rgba(0,229,255,0.5);
+        }
+
+        .dk-toggle {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 7px 10px; margin-bottom: 4px;
+            background: rgba(255,255,255,0.02); border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer; transition: all 0.2s;
+        }
+        .dk-toggle:hover { background: rgba(255,255,255,0.05); border-color: rgba(0,229,255,0.2); }
+        .dk-toggle-label { font-size: 11px; color: #ccc; }
+        .dk-toggle.on .dk-toggle-label { color: #00ff88; }
+        .dk-switch {
+            position: relative; width: 32px; height: 18px; flex-shrink: 0;
+            background: rgba(255,255,255,0.1); border-radius: 9px;
+            transition: all 0.25s;
+        }
+        .dk-toggle.on .dk-switch {
+            background: linear-gradient(90deg, #00e5ff, #b933ff);
+            box-shadow: 0 0 10px rgba(0,229,255,0.5);
+        }
+        .dk-switch::before {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #fff; transition: all 0.25s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .dk-toggle.on .dk-switch::before { left: 16px; }
+
+        .dk-btn {
+            width: 100%; padding: 8px; margin-top: 6px;
+            background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(185,51,255,0.15));
+            border: 1px solid rgba(0,229,255,0.3); color: #fff;
+            border-radius: 6px; cursor: pointer; font-family: inherit;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+            transition: all 0.2s;
+        }
+        .dk-btn:hover {
+            background: linear-gradient(135deg, rgba(0,229,255,0.3), rgba(185,51,255,0.3));
+            box-shadow: 0 0 16px rgba(0,229,255,0.4);
+            transform: translateY(-1px);
+        }
+        .dk-btn:active { transform: translateY(0); }
+        .dk-btn.danger {
+            background: linear-gradient(135deg, rgba(255,46,136,0.15), rgba(255,0,60,0.15));
+            border-color: rgba(255,46,136,0.4);
+        }
+        .dk-btn.danger:hover {
+            background: linear-gradient(135deg, rgba(255,46,136,0.3), rgba(255,0,60,0.3));
+            box-shadow: 0 0 16px rgba(255,46,136,0.4);
+        }
+
+        .dk-btn-row { display: flex; gap: 6px; }
+        .dk-btn-row .dk-btn { margin-top: 6px; }
+
+        .dk-input {
+            width: 100%; padding: 7px 9px; box-sizing: border-box;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px; color: #fff; font-family: inherit; font-size: 11px;
+            outline: none; transition: all 0.2s;
+        }
+        .dk-input:focus { border-color: rgba(0,229,255,0.5); box-shadow: 0 0 10px rgba(0,229,255,0.2); }
+        .dk-input::placeholder { color: #555; }
+
+        #docket-crosshair {
+            position: fixed; top: 50%; left: 50%; z-index: 2147483645;
+            width: 8px; height: 8px; margin: -4px 0 0 -4px;
+            pointer-events: none; display: none;
+        }
+        #docket-crosshair::before, #docket-crosshair::after {
+            content: ''; position: absolute; background: var(--xhair-color, #00ff88);
+            box-shadow: 0 0 6px var(--xhair-color, #00ff88);
+        }
+        #docket-crosshair::before { top: 3px; left: -4px; width: 16px; height: 2px; }
+        #docket-crosshair::after { top: -4px; left: 3px; width: 2px; height: 16px; }
+
+        #docket-minimap {
+            position: fixed; bottom: 16px; left: 16px; z-index: 2147483645;
+            border-radius: 10px; overflow: hidden; display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,255,0.3);
+        }
+
+        #docket-fab {
+            position: fixed; bottom: 16px; right: 16px; z-index: 2147483646;
+            width: 46px; height: 46px; border-radius: 50%;
+            background: linear-gradient(135deg, #00e5ff, #b933ff);
+            color: #000; font-family: inherit; font-weight: 800; font-size: 15px;
+            display: none; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 4px 20px rgba(0,229,255,0.5);
+            transition: transform 0.2s;
+        }
+        #docket-fab:hover { transform: scale(1.1); }
+
+        .dk-toast {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
+            padding: 10px 20px; border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+            color: #fff; z-index: 2147483647;
+            background: linear-gradient(135deg, #00e5ff, #b933ff);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5), 0 0 20px rgba(0,229,255,0.4);
+            opacity: 0; transition: all 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+            pointer-events: none;
+        }
+        .dk-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .dk-toast.success { background: linear-gradient(135deg, #00ff88, #00cc66); }
+        .dk-toast.error { background: linear-gradient(135deg, #ff2e88, #cc0033); }
+
+        /* ── KNIFE VIEWMODEL ──────────────────────────────────── */
+        #docket-knife-vm {
+            position: fixed; right: 20px; bottom: -90px;
+            width: 340px; height: 460px;
+            z-index: 2147483000; pointer-events: none;
+            display: none; transform-origin: 62% 88%;
+            will-change: transform;
+            filter: drop-shadow(-4px -8px 12px rgba(0,0,0,0.6));
+        }
+        #docket-knife-vm.visible { display: block; animation: dk-knife-idle 2.6s ease-in-out infinite; }
+        #docket-knife-vm.swinging-slash { animation: dk-knife-slash 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+        #docket-knife-vm.swinging-stab  { animation: dk-knife-stab 0.42s cubic-bezier(0.15, 0.9, 0.25, 1.1); }
+
+        @keyframes dk-knife-idle {
+            0%, 100% { transform: rotate(-16deg) translate(0,0); }
+            50%      { transform: rotate(-13deg) translate(-4px, 4px); }
+        }
+        @keyframes dk-knife-slash {
+            0%   { transform: rotate(-16deg) translate(0,0) scale(1); }
+            14%  { transform: rotate(-48deg) translate(-45px,-25px) scale(1.05); }
+            32%  { transform: rotate(-92deg) translate(-135px,55px) scale(1.09); }
+            52%  { transform: rotate(-125deg) translate(-190px,105px) scale(1.07); }
+            72%  { transform: rotate(-50deg) translate(-40px,20px) scale(1.02); }
+            100% { transform: rotate(-16deg) translate(0,0) scale(1); }
+        }
+        @keyframes dk-knife-stab {
+            0%   { transform: rotate(-16deg) translate(0,0) scale(1); }
+            22%  { transform: rotate(-10deg) translate(-55px,-35px) scale(0.88); }
+            46%  { transform: rotate(-5deg) translate(-175px,18px) scale(1.55); }
+            68%  { transform: rotate(-11deg) translate(-80px,28px) scale(1.14); }
+            100% { transform: rotate(-16deg) translate(0,0) scale(1); }
+        }
+
+        #docket-knife-stattrak {
+            position: fixed; right: 30px; bottom: 16px;
+            z-index: 2147483001; pointer-events: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; font-weight: 700; color: #ff6a2e;
+            text-shadow: 0 0 10px #ff4a00, 0 0 3px #000;
+            display: none; letter-spacing: 1px;
+        }
+        #docket-knife-stattrak.visible { display: block; }
+
+        .dk-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 4px; margin-bottom: 8px;
+        }
+        .dk-grid-item {
+            padding: 6px 2px; text-align: center; cursor: pointer;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 4px; font-size: 8.5px; color: #888;
+            transition: all 0.15s;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .dk-grid-item:hover { color: #ddd; background: rgba(255,255,255,0.07); }
+        .dk-grid-item.active {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(0,229,255,0.28), rgba(185,51,255,0.28));
+            border-color: rgba(0,229,255,0.5);
+            box-shadow: 0 0 10px rgba(0,229,255,0.35);
+        }
+        .dk-grid-item .swatch {
+            width: 100%; height: 14px; border-radius: 2px;
+            margin-bottom: 3px;
+            border: 1px solid rgba(0,0,0,0.4);
+            box-shadow: inset 0 0 4px rgba(255,255,255,0.15);
+        }
+    `;
+    document.head.appendChild(styleEl);
+
+    // ── DOM PANEL ──────────────────────────────────────────────
     const panel = document.createElement('div');
     panel.id = 'docket-panel';
-    panel.style.cssText = `
-        position: fixed; top: 12px; right: 12px; z-index: 2147483647;
-        background: rgba(8,16,12,0.96); color: #c8e6c9;
-        font: 12px/1.6 monospace; padding: 12px 14px;
-        border: 1px solid #2e7d32; border-radius: 6px;
-        min-width: 290px; max-width: 330px; user-select: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    `;
     panel.innerHTML = `
-        <div style="font-weight:bold;margin-bottom:6px;color:#81c784;display:flex;justify-content:space-between;">
-            <span>SURFD CHEAT</span>
-            <span style="color:#555;font-weight:normal;">[docket]</span>
+        <div class="dk-header" id="dk-header">
+            <div>
+                <span class="dk-title">SURFD</span>
+                <span class="dk-badge">docket</span>
+            </div>
+            <div>
+                <button class="dk-btn-icon" id="dk-min" title="Minimalizuj">─</button>
+                <button class="dk-btn-icon" id="dk-close" title="Zamknij">✕</button>
+            </div>
         </div>
-        <div id="d-stats" style="color:#aaa;margin-bottom:10px;font-size:11px;line-height:1.4;background:rgba(0,0,0,0.3);padding:4px;border-radius:3px;"></div>
-
-        <label>airAccelerate <input id="d-accel" type="range" min="150" max="5000" step="10" style="width:100%"></label>
-        <div id="d-accel-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
-
-        <label>maxSpeed <input id="d-max" type="range" min="260" max="8000" step="10" style="width:100%"></label>
-        <div id="d-max-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
-
-        <label>airCap <input id="d-aircap" type="range" min="30" max="1500" step="5" style="width:100%"></label>
-        <div id="d-aircap-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
-
-        <label>gravity <input id="d-grav" type="range" min="0" max="800" step="10" style="width:100%"></label>
-        <div id="d-grav-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
-
-        <label>friction <input id="d-fric" type="range" min="0" max="4" step="0.1" style="width:100%"></label>
-        <div id="d-fric-val" style="color:#aaa;font-size:11px;margin-bottom:4px;"></div>
-
-        <hr style="border:0;border-top:1px solid #333;margin:8px 0;">
-
-        <label style="display:block;margin-bottom:4px;">
-            <input id="d-instant" type="checkbox" style="vertical-align:middle;"> <b>Instant Speed</b> (w powietrzu)
-        </label>
-        <label style="display:block;margin-bottom:4px;">
-            <input id="d-fly" type="checkbox" style="vertical-align:middle;"> <b>Fly Mode</b> (względem kamery)
-        </label>
-        <label style="display:block;margin-bottom:4px;">
-            <input id="d-noclip" type="checkbox" style="vertical-align:middle;"> <b>No-clip</b> (przez ściany)
-        </label>
-        <label style="display:block;margin-bottom:4px;">
-            <input id="d-timer" type="checkbox" style="vertical-align:middle;"> <b>Freeze Timer</b> (stop czasu)
-        </label>
-        <label style="display:block;margin-bottom:4px;">
-            <input id="d-bhop" type="checkbox" style="vertical-align:middle;"> <b>Auto-Bhop</b> (skacze sam)
-        </label>
-        
-        <div style="margin-top:8px;padding:6px;background:#1b3a1b;border:1px solid #2e7d32;border-radius:4px;text-align:center;">
-            <b>Klawisz C</b> = natychmiastowy Finish
+        <div class="dk-body" id="dk-body">
+            <div class="dk-stats" id="dk-stats"></div>
+            <div class="dk-tabs">
+                <button class="dk-tab active" data-tab="move">RUCH</button>
+                <button class="dk-tab" data-tab="modes">MODY</button>
+                <button class="dk-tab" data-tab="view">WIDOK</button>
+                <button class="dk-tab" data-tab="knife">NÓŻ</button>
+                <button class="dk-tab" data-tab="act">AKCJE</button>
+            </div>
+            <div class="dk-pane active" data-pane="move">
+                <div class="dk-section-title">Fizyka</div>
+                <div id="dk-move-sliders"></div>
+            </div>
+            <div class="dk-pane" data-pane="modes">
+                <div class="dk-section-title">Assist</div>
+                <div id="dk-modes-toggles"></div>
+                <div class="dk-section-title">Mnożniki</div>
+                <div id="dk-modes-mults"></div>
+            </div>
+            <div class="dk-pane" data-pane="view">
+                <div class="dk-section-title">Render</div>
+                <div id="dk-view-toggles"></div>
+                <div class="dk-section-title">Parametry</div>
+                <div id="dk-view-sliders"></div>
+            </div>
+            <div class="dk-pane" data-pane="knife">
+                <div class="dk-section-title">Widoczność</div>
+                <div class="dk-toggle" id="dk-k-enable">
+                    <span class="dk-toggle-label">Pokaż nóż</span>
+                    <span class="dk-switch"></span>
+                </div>
+                <div class="dk-toggle on" id="dk-k-st-toggle">
+                    <span class="dk-toggle-label">StatTrak™</span>
+                    <span class="dk-switch"></span>
+                </div>
+                <div class="dk-section-title">Model</div>
+                <div id="dk-k-types" class="dk-grid"></div>
+                <div class="dk-section-title">Skin</div>
+                <div id="dk-k-finishes" class="dk-grid"></div>
+                <div class="dk-section-title">Float (zużycie)</div>
+                <div id="dk-k-wear"></div>
+                <div class="dk-section-title">Statystyki</div>
+                <div class="dk-stats" id="dk-k-info"></div>
+                <button class="dk-btn" id="dk-k-slash">ZAMACHNIJ — SLASH (LMB / V)</button>
+                <button class="dk-btn" id="dk-k-stab">PCHNIĘCIE — STAB (B)</button>
+                <button class="dk-btn danger" id="dk-k-reset-st">RESET StatTrak</button>
+            </div>
+            <div class="dk-pane" data-pane="act">
+                <div class="dk-section-title">Teleport</div>
+                <button class="dk-btn" id="dk-tp-finish">TP → Finish</button>
+                <button class="dk-btn" id="dk-tp-start">TP → Start</button>
+                <div class="dk-section-title">Pozycja</div>
+                <div class="dk-btn-row">
+                    <button class="dk-btn" id="dk-save-pos">Zapisz</button>
+                    <button class="dk-btn" id="dk-load-pos">Wczytaj</button>
+                </div>
+                <div class="dk-section-title">Preset</div>
+                <input class="dk-input" id="dk-preset-name" placeholder="nazwa presetu..." style="margin-bottom:6px;">
+                <div class="dk-btn-row">
+                    <button class="dk-btn" id="dk-preset-save">Zapisz</button>
+                    <button class="dk-btn" id="dk-preset-load">Wczytaj</button>
+                </div>
+                <div class="dk-section-title">Reset</div>
+                <button class="dk-btn danger" id="dk-reset">RESET DO ORYGINAŁU</button>
+            </div>
         </div>
-
-        <button id="d-reset" style="margin-top:10px;width:100%;background:#1b3a1b;color:#c8e6c9;border:1px solid #2e7d32;padding:6px;cursor:pointer;border-radius:4px;font-weight:bold;">RESET DO ORYGINAŁU</button>
     `;
     document.documentElement.appendChild(panel);
 
     const $ = id => panel.querySelector(id);
-    const accel = $('#d-accel'), max = $('#d-max'), aircap = $('#d-aircap'),
-          grav = $('#d-grav'), fric = $('#d-fric');
+    const body = $('#dk-body');
 
-    accel.value = cfg.airAccelerate;
-    max.value = cfg.maxSpeed;
-    aircap.value = cfg.airCap;
-    grav.value = cfg.gravity;
-    fric.value = cfg.friction;
+    // ── OVERLAYS ───────────────────────────────────────────────
+    const crosshairEl = document.createElement('div');
+    crosshairEl.id = 'docket-crosshair';
+    document.documentElement.appendChild(crosshairEl);
 
-    function refreshVals() {
-        $('#d-accel-val').textContent = `= ${accel.value}`;
-        $('#d-max-val').textContent = `= ${max.value}`;
-        $('#d-aircap-val').textContent = `= ${aircap.value}`;
-        $('#d-grav-val').textContent = `= ${grav.value}`;
-        $('#d-fric-val').textContent = `= ${fric.value}`;
+    const minimapEl = document.createElement('canvas');
+    minimapEl.id = 'docket-minimap';
+    minimapEl.width = 180; minimapEl.height = 180;
+    document.documentElement.appendChild(minimapEl);
+    const mmCtx = minimapEl.getContext('2d');
+
+    const fab = document.createElement('div');
+    fab.id = 'docket-fab';
+    fab.textContent = 'K';
+    document.documentElement.appendChild(fab);
+    fab.onclick = () => { panel.style.display = ''; fab.style.display = 'none'; };
+
+    const vm = document.createElement('div');
+    vm.id = 'docket-knife-vm';
+    document.documentElement.appendChild(vm);
+
+    const stEl = document.createElement('div');
+    stEl.id = 'docket-knife-stattrak';
+    document.documentElement.appendChild(stEl);
+
+    // ── TOAST ──────────────────────────────────────────────────
+    function toast(msg, type = 'info') {
+        const el = document.createElement('div');
+        el.className = 'dk-toast ' + type;
+        el.textContent = msg;
+        document.body.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('show'));
+        setTimeout(() => {
+            el.classList.remove('show');
+            setTimeout(() => el.remove(), 400);
+        }, 1800);
     }
-    refreshVals();
+    window.__docket_toast = toast;
 
-    function applyCfg() {
-        const vals = {
-            airAccelerate: +accel.value,
-            maxSpeed: +max.value,
-            airCap: +aircap.value,
-            gravity: +grav.value,
-            friction: +fric.value,
+    // ── TOGGLE BUILDER ─────────────────────────────────────────
+    function makeToggle(label, key, parent) {
+        const el = document.createElement('div');
+        el.className = 'dk-toggle' + (st[key] ? ' on' : '');
+        el.innerHTML = `<span class="dk-toggle-label">${label}</span><span class="dk-switch"></span>`;
+        el.onclick = () => {
+            st[key] = !st[key];
+            el.classList.toggle('on', st[key]);
+            onToggleChange(key, st[key]);
         };
-        Object.assign(cfg, vals);
-        if (M?.config) Object.assign(M.config, vals);
-        refreshVals();
+        parent.appendChild(el);
+        return el;
+    }
+    function onToggleChange(key, val) {
+        if (key === 'fullbright') applyFullbright();
+        if (key === 'crosshair') crosshairEl.style.display = val ? 'block' : 'none';
+        if (key === 'minimap') minimapEl.style.display = val ? 'block' : 'none';
     }
 
-    accel.oninput = applyCfg;
-    max.oninput = applyCfg;
-    aircap.oninput = applyCfg;
-    grav.oninput = applyCfg;
-    fric.oninput = applyCfg;
+    // ── SLIDER BUILDER ─────────────────────────────────────────
+    function makeSlider(label, key, min, max, step, parent, formatter, onChange) {
+        const wrap = document.createElement('div');
+        wrap.className = 'dk-row';
+        wrap.innerHTML = `
+            <div class="dk-row-label"><span>${label}</span><span class="val"></span></div>
+            <input type="range" class="dk-slider" min="${min}" max="${max}" step="${step}">
+        `;
+        const input = wrap.querySelector('input');
+        const valEl = wrap.querySelector('.val');
+        const val = st[key] !== undefined ? st[key] : cfg[key];
+        input.value = val;
+        valEl.textContent = formatter ? formatter(+val) : val;
+        const updatePct = () => {
+            const pct = ((+input.value - min) / (max - min)) * 100;
+            input.style.setProperty('--pct', pct + '%');
+        };
+        updatePct();
+        input.oninput = () => {
+            st[key] = +input.value;
+            valEl.textContent = formatter ? formatter(+input.value) : input.value;
+            updatePct();
+            onChange && onChange(+input.value);
+        };
+        parent.appendChild(wrap);
+        return { input, valEl };
+    }
 
-    let instant = false;
-    let flyMode = false;
-    let noclip = false;
-    let freezeTimer = false;
-    let autoBhop = false;
-    let forceFinish = false;
-
-    $('#d-instant').onchange = e => { instant = e.target.checked; };
-    $('#d-fly').onchange = e => { flyMode = e.target.checked; };
-    $('#d-noclip').onchange = e => { noclip = e.target.checked; };
-    $('#d-timer').onchange = e => { freezeTimer = e.target.checked; };
-    $('#d-bhop').onchange = e => { autoBhop = e.target.checked; };
-
-    // ── GŁÓWNA PĘTLA (STEP) ──────────────────────────────────────
-    const origStep = S.step;
-    S.step = function (cmd) {
-        // 1. Auto-bhop
-        if (autoBhop && this.state.grounded) {
-            cmd.jump = true;
-        }
-        
-        // 2. Fly mode (względem kamery)
-        if (flyMode) {
-            this.state.velocity.z = 0;
-            this.state.grounded = false;
-            const spd = 800; 
-            
-            const yawRad = cmd.yaw * Math.PI / 180;
-            const fwdX = Math.cos(yawRad);
-            const fwdY = Math.sin(yawRad);
-            const rightX = Math.sin(yawRad);
-            const rightY = -Math.cos(yawRad);
-
-            const f = cmd.forward / 400;
-            this.state.position.x += (fwdX * f) * spd * this.config.dt;
-            this.state.position.y += (fwdY * f) * spd * this.config.dt;
-
-            const s = cmd.side / 400;
-            this.state.position.x += (rightX * s) * spd * this.config.dt;
-            this.state.position.y += (rightY * s) * spd * this.config.dt;
-
-            if (cmd.jump) this.state.position.z += spd * this.config.dt;
-            if (cmd.duck) this.state.position.z -= spd * this.config.dt;
-        }
-
-        const result = origStep.call(this, cmd);
-
-        // 3. Instant speed
-        if (instant && !this.state.grounded) {
-            const targetMax = Math.max(+max.value, +aircap.value * 10);
-            const v = this.state.velocity;
-            const sp = Math.hypot(v.x, v.y);
-            
-            if (sp > 0.1) {
-                const scale = targetMax / sp;
-                v.x *= scale;
-                v.y *= scale;
-            } else {
-                const yaw = cmd.yaw * Math.PI / 180;
-                v.x = Math.cos(yaw) * targetMax;
-                v.y = Math.sin(yaw) * targetMax;
+    // ── MOVE SLIDERS ───────────────────────────────────────────
+    const moveSliders = $('#dk-move-sliders');
+    const applyCfg = () => {
+        CFG_KEYS.forEach(k => {
+            if (st[k] !== undefined) {
+                cfg[k] = st[k];
+                if (M?.config) M.config[k] = st[k];
             }
-            
-            if (this.config.maxVelocity < targetMax) {
-                this.config.maxVelocity = targetMax * 1.5;
-            }
-        }
-
-        // 4. Force Finish (Manualny trigger)
-        if (forceFinish && this.timer.state.phase === 'running') {
-            const finishZone = this.timer.zones.find(z => z.kind === 'finish');
-            if (finishZone) {
-                this.state.position.x = (finishZone.min.x + finishZone.max.x) / 2;
-                this.state.position.y = (finishZone.min.y + finishZone.max.y) / 2;
-                this.state.position.z = (finishZone.min.z + finishZone.max.z) / 2;
-                
-                this.state.velocity.x = 0;
-                this.state.velocity.y = 0;
-                this.state.velocity.z = 0;
-                
-                const finishCmd = { ...cmd, forward: 0, side: 0, jump: false, duck: false };
-                origStep.call(this, finishCmd);
-                
-                console.log('[docket] wymuszono zakończenie');
-            }
-            forceFinish = false;
-        }
-
-        return result;
+        });
     };
+    makeSlider('airAccelerate', 'airAccelerate', 150, 5000, 10, moveSliders, v => v, applyCfg);
+    makeSlider('maxSpeed', 'maxSpeed', 260, 8000, 10, moveSliders, v => v, applyCfg);
+    makeSlider('airCap', 'airCap', 30, 1500, 5, moveSliders, v => v, applyCfg);
+    makeSlider('gravity', 'gravity', 0, 800, 10, moveSliders, v => v, applyCfg);
+    makeSlider('friction', 'friction', 0, 4, 0.1, moveSliders, v => v.toFixed(1), applyCfg);
+    makeSlider('maxVelocity', 'maxVelocity', 260, 8000, 10, moveSliders, v => v, applyCfg);
 
-    // ── FREEZE TIMER ─────────────────────────────────────────────
-    const origTimerStep = T.step.bind(T);
-    T.step = function (...args) {
-        if (freezeTimer) return [];
-        return origTimerStep(...args);
-    };
+    // ── MODES ──────────────────────────────────────────────────
+    const modesToggles = $('#dk-modes-toggles');
+    makeToggle('Instant Speed', 'instant', modesToggles);
+    makeToggle('Fly Mode', 'flyMode', modesToggles);
+    makeToggle('No-clip', 'noclip', modesToggles);
+    makeToggle('Freeze Timer', 'freezeTimer', modesToggles);
+    makeToggle('Pause Fizyki', 'paused', modesToggles);
+    makeToggle('Auto-Bhop', 'autoBhop', modesToggles);
+    makeToggle('Auto-Strafe', 'autoStrafe', modesToggles);
+    makeToggle('Infinite Jump', 'infJump', modesToggles);
+    makeToggle('Auto-Restart', 'autoRestart', modesToggles);
+    makeToggle('Spin', 'spin', modesToggles);
+    const modesMults = $('#dk-modes-mults');
+    makeSlider('Speed Boost', 'speedBoost', 1, 10, 0.1, modesMults, v => v.toFixed(1) + '×');
+    makeSlider('Time Scale', 'timeScale', 0.1, 5, 0.1, modesMults, v => v.toFixed(1) + '×');
 
-    // ── NO-CLIP (KOLIZJE) ────────────────────────────────────────
-    if (M?.world && !M.world.__docket_noclip) {
-        M.world.__docket_noclip = true;
+    // ── VIEW ───────────────────────────────────────────────────
+    const viewToggles = $('#dk-view-toggles');
+    makeToggle('Full Bright', 'fullbright', viewToggles);
+    makeToggle('Custom Crosshair', 'crosshair', viewToggles);
+    makeToggle('Mini-Map', 'minimap', viewToggles);
+    const viewSliders = $('#dk-view-sliders');
+    makeSlider('Fullbright Intensity', 'fullbrightIntensity', 0.5, 4, 0.1, viewSliders, v => v.toFixed(1) + '×', applyFullbright);
+    makeSlider('FOV', 'fov', 60, 140, 1, viewSliders, v => v + '°', () => applyFov());
+    makeSlider('Spin Speed', 'spinSpeed', 30, 720, 10, viewSliders, v => v + '°/s');
+
+    // ── TABS ───────────────────────────────────────────────────
+    panel.querySelectorAll('.dk-tab').forEach(tab => {
+        tab.onclick = () => {
+            panel.querySelectorAll('.dk-tab').forEach(t => t.classList.remove('active'));
+            panel.querySelectorAll('.dk-pane').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            panel.querySelector(`[data-pane="${tab.dataset.tab}"]`).classList.add('active');
+        };
+    });
+
+    // ── DRAG ───────────────────────────────────────────────────
+    let dragState = null;
+    $('#dk-header').addEventListener('mousedown', e => {
+        if (e.target.closest('button')) return;
+        dragState = { dx: e.clientX - panel.offsetLeft, dy: e.clientY - panel.offsetTop };
+    });
+    document.addEventListener('mousemove', e => {
+        if (!dragState) return;
+        panel.style.left = (e.clientX - dragState.dx) + 'px';
+        panel.style.top = (e.clientY - dragState.dy) + 'px';
+        panel.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => { dragState = null; });
+    $('#dk-min').onclick = () => { body.style.display = body.style.display === 'none' ? '' : 'none'; };
+    $('#dk-close').onclick = () => { panel.style.display = 'none'; fab.style.display = 'flex'; };
+
+    // ── FULLBRIGHT ─────────────────────────────────────────────
+    const fbTargets = { scenes: [], renderers: [], lights: [] };
+    (function scanThree() {
+        const seen = new WeakSet();
+        function scan(obj, depth = 0) {
+            if (!obj || typeof obj !== 'object' || seen.has(obj) || depth > 6) return;
+            seen.add(obj);
+            if (obj.isScene) fbTargets.scenes.push(obj);
+            if (obj.isWebGLRenderer) fbTargets.renderers.push(obj);
+            if (obj.isLight) fbTargets.lights.push(obj);
+            if (obj.isCamera) st._camera = obj;
+            ['scene','renderer','three','engine','world','view','render','graphics','core','game','camera'].forEach(k => {
+                try { if (obj[k] && typeof obj[k] === 'object') scan(obj[k], depth + 1); } catch {}
+            });
+        }
+        try { scan(S); } catch {}
+        ['scene','renderer','three'].forEach(k => {
+            try { if (window[k]) scan(window[k], 0); } catch {}
+        });
+    })();
+
+    function applyFullbright() {
+        const on = st.fullbright;
+        const inten = st.fullbrightIntensity;
+        fbTargets.scenes.forEach(sc => {
+            if (sc.__dk_origFog === undefined) sc.__dk_origFog = sc.fog;
+            sc.fog = on ? null : sc.__dk_origFog;
+            sc.traverse?.(o => {
+                if (o.isLight) {
+                    if (o.__dk_origI === undefined) o.__dk_origI = o.intensity;
+                    o.intensity = on ? o.__dk_origI * inten : o.__dk_origI;
+                }
+                if (o.isMesh && o.material) {
+                    const mats = Array.isArray(o.material) ? o.material : [o.material];
+                    mats.forEach(m => {
+                        if (m.emissive && m.emissive.setHex) {
+                            if (m.__dk_origEm === undefined) {
+                                m.__dk_origEm = m.emissive.getHex();
+                                m.__dk_origEmInt = m.emissiveIntensity;
+                            }
+                            m.emissive.setHex(on ? 0xffffff : m.__dk_origEm);
+                            m.emissiveIntensity = on ? 0.15 * inten : m.__dk_origEmInt;
+                        }
+                    });
+                }
+            });
+        });
+        fbTargets.renderers.forEach(r => {
+            if (r.__dk_origExp === undefined) r.__dk_origExp = r.toneMappingExposure;
+            r.toneMappingExposure = on ? r.__dk_origExp * inten : r.__dk_origExp;
+        });
+        const canvas = document.querySelector('canvas');
+        if (canvas) {
+            canvas.style.filter = on
+                ? `brightness(${1 + (inten - 1) * 0.4}) saturate(1.1) contrast(1.05)`
+                : '';
+        }
+    }
+
+    function applyFov() {
+        const f = st.fov;
+        if (st._camera) st._camera.fov = f;
+        if (cfg.fov !== undefined) cfg.fov = f;
+        if (M?.config && M.config.fov !== undefined) M.config.fov = f;
+    }
+
+    // ── NOCLIP HOOK ────────────────────────────────────────────
+    if (M?.world && !M.world.__dk_noclip) {
+        M.world.__dk_noclip = true;
         const origTrace = M.world.trace.bind(M.world);
         M.world.trace = function (from, to, hull) {
-            if (noclip) {
-                return { fraction: 1, end: { ...to }, normal: { x:0,y:0,z:0 },
+            if (st.noclip) {
+                return { fraction: 1, end: { ...to }, normal: { x: 0, y: 0, z: 0 },
                          startSolid: false, allSolid: false, brush: null };
             }
             return origTrace(from, to, hull);
         };
     }
 
-    // ── KLAWISZ C (FINISH) ───────────────────────────────────────
-    document.addEventListener('keydown', e => {
-        if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            // Tylko gdy menu jest ukryte (jesteśmy w grze) i bieg trwa
-            if (S.timer.state.phase === 'running' && document.getElementById('menu').hidden) {
-                e.preventDefault();
-                e.stopPropagation();
-                forceFinish = true;
-                console.log('[docket] Finish na klawisz C...');
+    // ── MAIN STEP HOOK ─────────────────────────────────────────
+    const origStep = S.step;
+    let spinAccum = 0;
+
+    S.step = function (cmd) {
+        cmd = { ...cmd };
+        if (!st.startPos && this.state?.position) st.startPos = { ...this.state.position };
+
+        const grounded = this.state?.grounded;
+        const dt = this.config?.dt || 0.016;
+
+        if (st.paused) return null;
+
+        if (st.autoRestart && this.state.position.z < -2000 && st.startPos) {
+            Object.assign(this.state.position, st.startPos);
+            this.state.velocity.x = 0; this.state.velocity.y = 0; this.state.velocity.z = 0;
+            toast('Auto-restart', 'success');
+        }
+        if (st.autoBhop && grounded) cmd.jump = true;
+        if (st.autoStrafe && !grounded) {
+            const v = this.state.velocity;
+            const sp = Math.hypot(v.x, v.y);
+            if (sp > 50) {
+                const velAng = Math.atan2(v.y, v.x);
+                const viewAng = cmd.yaw * Math.PI / 180;
+                let delta = viewAng - velAng;
+                while (delta > Math.PI) delta -= 2 * Math.PI;
+                while (delta < -Math.PI) delta += 2 * Math.PI;
+                cmd.side = Math.sign(delta) * 400;
+                cmd.forward = 0;
             }
         }
-    }, true);
+        if (st.spin && !grounded) {
+            spinAccum += st.spinSpeed * dt;
+            cmd.yaw += spinAccum;
+        } else if (!st.spin) spinAccum = 0;
 
-    // ── RESET ────────────────────────────────────────────────────
-    $('#d-reset').onclick = () => {
-        Object.assign(cfg, origCfg);
-        if (M?.config) Object.assign(M.config, origCfg);
-        
-        accel.value = origCfg.airAccelerate;
-        max.value = origCfg.maxSpeed;
-        aircap.value = origCfg.airCap;
-        grav.value = origCfg.gravity;
-        fric.value = origCfg.friction;
-        
-        instant = flyMode = noclip = freezeTimer = autoBhop = false;
-        ['instant', 'fly', 'noclip', 'timer', 'bhop'].forEach(id => $('#d-' + id).checked = false);
-        
-        refreshVals();
-        console.log('[docket] przywrócono oryginalne ustawienia.');
+        if (st.flyMode) {
+            this.state.velocity.z = 0;
+            this.state.grounded = false;
+            const spd = 800;
+            const yawRad = cmd.yaw * Math.PI / 180;
+            const f = (cmd.forward / 400) * spd * dt;
+            const s = (cmd.side / 400) * spd * dt;
+            this.state.position.x += Math.cos(yawRad) * f + Math.sin(yawRad) * s;
+            this.state.position.y += Math.sin(yawRad) * f - Math.cos(yawRad) * s;
+            if (cmd.jump) this.state.position.z += spd * dt;
+            if (cmd.duck) this.state.position.z -= spd * dt;
+        }
+
+        const origDt = this.config.dt;
+        this.config.dt = origDt * st.timeScale;
+        const result = origStep.call(this, cmd);
+        this.config.dt = origDt;
+
+        if (st.speedBoost > 1) {
+            const v = this.state.velocity;
+            const sp = Math.hypot(v.x, v.y);
+            if (sp > 50) { v.x *= st.speedBoost; v.y *= st.speedBoost; }
+        }
+        if (st.instant && !this.state.grounded) {
+            const v = this.state.velocity;
+            const sp = Math.hypot(v.x, v.y);
+            const targetMax = (cfg.maxSpeed || 300) * 3;
+            if (sp > 0.1) { const sc = targetMax / sp; v.x *= sc; v.y *= sc; }
+            else {
+                const yaw = cmd.yaw * Math.PI / 180;
+                v.x = Math.cos(yaw) * targetMax;
+                v.y = Math.sin(yaw) * targetMax;
+            }
+            if (this.config.maxVelocity < targetMax) this.config.maxVelocity = targetMax * 1.5;
+        }
+        if (st.infJump && cmd.jump && !this.state.grounded) {
+            if (this.state.velocity.z < 200) this.state.velocity.z = 250;
+        }
+        if (st.forceFinish && this.timer.state.phase === 'running') {
+            const fz = this.timer.zones.find(z => z.kind === 'finish');
+            if (fz) {
+                this.state.position.x = (fz.min.x + fz.max.x) / 2;
+                this.state.position.y = (fz.min.y + fz.max.y) / 2;
+                this.state.position.z = (fz.min.z + fz.max.z) / 2;
+                this.state.velocity.x = 0; this.state.velocity.y = 0; this.state.velocity.z = 0;
+                origStep.call(this, { ...cmd, forward: 0, side: 0, jump: false, duck: false });
+                toast('Force Finish', 'success');
+            }
+            st.forceFinish = false;
+        }
+        if (st.minimap) {
+            st.trail.push({ x: this.state.position.x, y: this.state.position.y });
+            if (st.trail.length > 120) st.trail.shift();
+        }
+        return result;
     };
 
-    // ── DIAGNOSTYKA ──────────────────────────────────────────────
+    const origTimerStep = T.step.bind(T);
+    T.step = function (...args) {
+        if (st.freezeTimer) return [];
+        return origTimerStep(...args);
+    };
+
+    // ── ACTION BUTTONS ─────────────────────────────────────────
+    $('#dk-tp-finish').onclick = () => {
+        const fz = S.timer.zones.find(z => z.kind === 'finish');
+        if (!fz) return toast('Brak strefy finish', 'error');
+        S.state.position.x = (fz.min.x + fz.max.x) / 2;
+        S.state.position.y = (fz.min.y + fz.max.y) / 2;
+        S.state.position.z = (fz.min.z + fz.max.z) / 2;
+        S.state.velocity.x = S.state.velocity.y = S.state.velocity.z = 0;
+        toast('TP → Finish', 'success');
+    };
+    $('#dk-tp-start').onclick = () => {
+        if (!st.startPos) return toast('Brak pozycji startowej', 'error');
+        Object.assign(S.state.position, st.startPos);
+        S.state.velocity.x = S.state.velocity.y = S.state.velocity.z = 0;
+        toast('TP → Start', 'success');
+    };
+    $('#dk-save-pos').onclick = () => { st.savedPos = { ...S.state.position }; toast('Pozycja zapisana', 'success'); };
+    $('#dk-load-pos').onclick = () => {
+        if (!st.savedPos) return toast('Brak zapisanej pozycji', 'error');
+        Object.assign(S.state.position, st.savedPos);
+        S.state.velocity.x = S.state.velocity.y = S.state.velocity.z = 0;
+        toast('Pozycja wczytana', 'success');
+    };
+    $('#dk-preset-save').onclick = () => {
+        const name = $('#dk-preset-name').value.trim();
+        if (!name) return toast('Podaj nazwę', 'error');
+        const data = { cfg: {}, st: {}, knife: {} };
+        CFG_KEYS.forEach(k => data.cfg[k] = cfg[k]);
+        Object.keys(st).forEach(k => { if (typeof st[k] !== 'object') data.st[k] = st[k]; });
+        ['type','finish','wear','statTrakOn','enabled'].forEach(k => data.knife[k] = kst[k]);
+        localStorage.setItem('docket_preset_' + name, JSON.stringify(data));
+        toast('Preset zapisany: ' + name, 'success');
+    };
+    $('#dk-preset-load').onclick = () => {
+        const name = $('#dk-preset-name').value.trim();
+        if (!name) return toast('Podaj nazwę', 'error');
+        const raw = localStorage.getItem('docket_preset_' + name);
+        if (!raw) return toast('Preset nie istnieje', 'error');
+        try {
+            const data = JSON.parse(raw);
+            Object.assign(cfg, data.cfg);
+            if (M?.config) Object.assign(M.config, data.cfg);
+            Object.assign(st, data.st);
+            Object.assign(kst, data.knife);
+            applyCfg(); applyFullbright(); applyFov();
+            crosshairEl.style.display = st.crosshair ? 'block' : 'none';
+            minimapEl.style.display = st.minimap ? 'block' : 'none';
+            renderKnife(); updateKnifeInfo(); renderStatTrak();
+            toast('Preset wczytany: ' + name, 'success');
+        } catch { toast('Błąd wczytywania', 'error'); }
+    };
+    $('#dk-reset').onclick = () => {
+        Object.assign(cfg, origCfg);
+        if (M?.config) Object.assign(M.config, origCfg);
+        CFG_KEYS.forEach(k => { st[k] = origCfg[k]; });
+        Object.keys(st).forEach(k => {
+            if (typeof st[k] === 'boolean' && k !== 'paused') st[k] = false;
+        });
+        panel.querySelectorAll('.dk-toggle').forEach(t => {
+            if (t.id !== 'dk-k-enable' && t.id !== 'dk-k-st-toggle') t.classList.remove('on');
+        });
+        applyFullbright(); applyFov();
+        crosshairEl.style.display = 'none';
+        minimapEl.style.display = 'none';
+        toast('Reset do oryginału', 'success');
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    //  KNIFE MODULE
+    // ═══════════════════════════════════════════════════════════
+
+    let svgUid = 0;
+
+    function buildSVG() {
+        const shp = SHAPES[kst.type] || SHAPES.karambit;
+        const fin = FINISHES[kst.finish] || FINISHES.vanilla;
+        const uid = 'dk' + (++svgUid);
+
+        // Blade gradient (diagonal)
+        const stops = fin.blade.map((c, i, arr) =>
+            `<stop offset="${(i / Math.max(1, arr.length - 1)) * 100}%" stop-color="${c}"/>`
+        ).join('');
+
+        // Handle gradient (horizontal — cylindrical)
+        const hBase = fin.handle;
+        const hStops = `
+            <stop offset="0%"   stop-color="${shade(hBase, -0.5)}"/>
+            <stop offset="35%"  stop-color="${shade(hBase, 0.15)}"/>
+            <stop offset="55%"  stop-color="${shade(hBase, 0.15)}"/>
+            <stop offset="100%" stop-color="${shade(hBase, -0.6)}"/>
+        `;
+
+        // Guard — slight bevel via 3 vertical stops
+        const gStops = `
+            <stop offset="0%"   stop-color="${shade(fin.guard, 0.3)}"/>
+            <stop offset="50%"  stop-color="${fin.guard}"/>
+            <stop offset="100%" stop-color="${shade(fin.guard, -0.4)}"/>
+        `;
+
+        // Wear filter — brightness + saturation drop
+        const wearStyle = kst.wear > 0.01
+            ? `filter: brightness(${1 - kst.wear * 0.35}) saturate(${1 - kst.wear * 0.45}) contrast(${1 - kst.wear * 0.15});`
+            : '';
+
+        return `
+        <svg viewBox="0 0 300 420" width="100%" height="100%"
+             xmlns="http://www.w3.org/2000/svg"
+             style="filter: drop-shadow(0 0 14px ${fin.blade[0]}55);">
+            <defs>
+                <linearGradient id="${uid}-bg" x1="0" y1="0" x2="1" y2="1">
+                    ${stops}
+                </linearGradient>
+                <linearGradient id="${uid}-hg" x1="0" y1="0" x2="1" y2="0">
+                    ${hStops}
+                </linearGradient>
+                <linearGradient id="${uid}-gg" x1="0" y1="0" x2="0" y2="1">
+                    ${gStops}
+                </linearGradient>
+                <clipPath id="${uid}-hc">
+                    <path d="${shp.handle}"/>
+                </clipPath>
+            </defs>
+
+            <!-- BLADE (with wear filter) -->
+            <g style="${wearStyle}">
+                <path d="${shp.blade}" fill="url(#${uid}-bg)"
+                      stroke="rgba(0,0,0,0.55)" stroke-width="1.2" stroke-linejoin="round"/>
+                <!-- Left facet darkening (low-poly shading) -->
+                <path d="${shp.bladeLeft}" fill="#000" opacity="0.28"/>
+                <!-- Tip highlight facet -->
+                <path d="${shp.bladeTip}" fill="#fff" opacity="0.08"/>
+                <!-- Blood groove -->
+                <path d="${shp.groove}" stroke="rgba(0,0,0,0.45)"
+                      stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                <path d="${shp.groove}" stroke="rgba(255,255,255,0.12)"
+                      stroke-width="0.8" stroke-linecap="round" fill="none"
+                      transform="translate(-1,-1)"/>
+                <!-- Edge highlight -->
+                <path d="M150,40 L200,130 L200,250" stroke="rgba(255,255,255,0.42)"
+                      stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+                <!-- Spine highlight -->
+                <path d="M150,40 L105,100" stroke="rgba(255,255,255,0.2)"
+                      stroke-width="1.2" fill="none"/>
+            </g>
+
+            <!-- HANDLE -->
+            <g clip-path="url(#${uid}-hc)">
+                <rect x="90" y="260" width="120" height="150" fill="url(#${uid}-hg)"/>
+                <!-- Grip rings (5 bands) -->
+                <line x1="90" y1="290" x2="210" y2="290" stroke="rgba(0,0,0,0.55)" stroke-width="2.5"/>
+                <line x1="90" y1="290" x2="210" y2="290" stroke="rgba(255,255,255,0.08)" stroke-width="0.8" transform="translate(0,-2)"/>
+                <line x1="90" y1="316" x2="210" y2="316" stroke="rgba(0,0,0,0.55)" stroke-width="2.5"/>
+                <line x1="90" y1="316" x2="210" y2="316" stroke="rgba(255,255,255,0.08)" stroke-width="0.8" transform="translate(0,-2)"/>
+                <line x1="90" y1="342" x2="210" y2="342" stroke="rgba(0,0,0,0.55)" stroke-width="2.5"/>
+                <line x1="90" y1="342" x2="210" y2="342" stroke="rgba(255,255,255,0.08)" stroke-width="0.8" transform="translate(0,-2)"/>
+                <line x1="90" y1="366" x2="210" y2="366" stroke="rgba(0,0,0,0.55)" stroke-width="2.5"/>
+                <line x1="90" y1="366" x2="210" y2="366" stroke="rgba(255,255,255,0.08)" stroke-width="0.8" transform="translate(0,-2)"/>
+            </g>
+
+            <!-- GUARD / BOLSTER (on top, covers blade base) -->
+            <path d="${shp.guard}" fill="url(#${uid}-gg)"
+                  stroke="rgba(0,0,0,0.65)" stroke-width="1.3" stroke-linejoin="round"/>
+            <!-- Guard top highlight -->
+            <line x1="82" y1="242" x2="218" y2="242"
+                  stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+            <!-- Guard bottom shadow -->
+            <line x1="76" y1="266" x2="224" y2="266"
+                  stroke="rgba(0,0,0,0.6)" stroke-width="2"/>
+            <!-- Guard rivet -->
+            <circle cx="150" cy="254" r="3" fill="rgba(0,0,0,0.5)"/>
+            <circle cx="149" cy="253" r="1.2" fill="rgba(255,255,255,0.35)"/>
+        </svg>`;
+    }
+
+    function renderKnife() {
+        vm.innerHTML = buildSVG();
+        const fin = FINISHES[kst.finish] || FINISHES.vanilla;
+        vm.style.filter = `drop-shadow(-4px -8px 12px rgba(0,0,0,0.6)) drop-shadow(0 0 18px ${fin.blade[0]}44)`;
+    }
+
+    function renderStatTrak() {
+        if (kst.statTrakOn && kst.enabled) {
+            stEl.classList.add('visible');
+            stEl.textContent = `StatTrak™ ${String(kst.statTrak).padStart(4, '0')}`;
+        } else {
+            stEl.classList.remove('visible');
+        }
+    }
+
+    function triggerSwing(kind = 'slash') {
+        if (!kst.enabled || kst.swinging) return;
+        const now = performance.now();
+        if (now - kst.lastSwing < 420) return;
+        kst.lastSwing = now;
+        kst.swinging = true;
+        kst.swingKind = kind;
+        vm.classList.remove('swinging-slash', 'swinging-stab');
+        void vm.offsetWidth;
+        vm.classList.add(kind === 'stab' ? 'swinging-stab' : 'swinging-slash');
+
+        const running = S?.timer?.state?.phase === 'running';
+        if (kst.statTrakOn && running) {
+            kst.statTrak++;
+            renderStatTrak();
+        }
+        setTimeout(() => {
+            kst.swinging = false;
+            vm.classList.remove('swinging-slash', 'swinging-stab');
+        }, kind === 'stab' ? 440 : 400);
+    }
+
+    // ── KNIFE UI ───────────────────────────────────────────────
+    const knifePane = panel.querySelector('[data-pane="knife"]');
+
+    // Types grid
+    const typesGrid = panel.querySelector('#dk-k-types');
+    Object.entries(SHAPES).forEach(([key, def]) => {
+        const el = document.createElement('div');
+        el.className = 'dk-grid-item' + (key === kst.type ? ' active' : '');
+        el.textContent = def.name;
+        el.onclick = () => {
+            kst.type = key;
+            typesGrid.querySelectorAll('.dk-grid-item').forEach(x => x.classList.remove('active'));
+            el.classList.add('active');
+            renderKnife(); updateKnifeInfo();
+        };
+        typesGrid.appendChild(el);
+    });
+
+    // Finishes grid
+    const finGrid = panel.querySelector('#dk-k-finishes');
+    Object.entries(FINISHES).forEach(([key, def]) => {
+        const el = document.createElement('div');
+        el.className = 'dk-grid-item' + (key === kst.finish ? ' active' : '');
+        el.title = def.name;
+        const sw = document.createElement('div');
+        sw.className = 'swatch';
+        sw.style.background = def.blade.length > 1
+            ? `linear-gradient(135deg, ${def.blade.join(', ')})`
+            : def.blade[0];
+        el.appendChild(sw);
+        const lab = document.createElement('span');
+        lab.textContent = def.name;
+        el.appendChild(lab);
+        el.onclick = () => {
+            kst.finish = key;
+            finGrid.querySelectorAll('.dk-grid-item').forEach(x => x.classList.remove('active'));
+            el.classList.add('active');
+            renderKnife(); updateKnifeInfo();
+        };
+        finGrid.appendChild(el);
+    });
+
+    // Wear slider
+    const wearWrap = panel.querySelector('#dk-k-wear');
+    wearWrap.innerHTML = `
+        <div class="dk-row-label"><span>Wear</span><span class="val"></span></div>
+        <input type="range" class="dk-slider" min="0" max="1" step="0.01">
+    `;
+    const wearInput = wearWrap.querySelector('input');
+    const wearVal = wearWrap.querySelector('.val');
+    function wearLabel(v) {
+        if (v < 0.07) return v.toFixed(2) + ' — Factory New';
+        if (v < 0.15) return v.toFixed(2) + ' — Minimal Wear';
+        if (v < 0.38) return v.toFixed(2) + ' — Field-Tested';
+        if (v < 0.45) return v.toFixed(2) + ' — Well-Worn';
+        return v.toFixed(2) + ' — Battle-Scarred';
+    }
+    function updateWearPct() {
+        const pct = (parseFloat(wearInput.value)) * 100;
+        wearInput.style.setProperty('--pct', pct + '%');
+    }
+    wearInput.value = kst.wear;
+    wearVal.textContent = wearLabel(kst.wear);
+    updateWearPct();
+    wearInput.oninput = () => {
+        kst.wear = parseFloat(wearInput.value);
+        wearVal.textContent = wearLabel(kst.wear);
+        updateWearPct();
+        renderKnife();
+    };
+
+    // Enable + StatTrak toggles
+    const enToggle = panel.querySelector('#dk-k-enable');
+    enToggle.onclick = () => {
+        kst.enabled = !kst.enabled;
+        enToggle.classList.toggle('on', kst.enabled);
+        vm.classList.toggle('visible', kst.enabled);
+        renderStatTrak(); updateKnifeInfo();
+    };
+    const stToggle = panel.querySelector('#dk-k-st-toggle');
+    stToggle.onclick = () => {
+        kst.statTrakOn = !kst.statTrakOn;
+        stToggle.classList.toggle('on', kst.statTrakOn);
+        renderStatTrak(); updateKnifeInfo();
+    };
+
+    // Buttons
+    panel.querySelector('#dk-k-slash').onclick = () => triggerSwing('slash');
+    panel.querySelector('#dk-k-stab').onclick = () => triggerSwing('stab');
+    panel.querySelector('#dk-k-reset-st').onclick = () => {
+        kst.statTrak = 0; renderStatTrak(); updateKnifeInfo();
+    };
+
+    function updateKnifeInfo() {
+        const info = panel.querySelector('#dk-k-info');
+        const fin = FINISHES[kst.finish];
+        const shp = SHAPES[kst.type];
+        info.innerHTML = `
+            <div class="dk-stat-row"><span>model</span><b>${shp.name}</b></div>
+            <div class="dk-stat-row"><span>skin</span><b>${fin.name}</b></div>
+            <div class="dk-stat-row"><span>float</span><b>${kst.wear.toFixed(4)}</b></div>
+            <div class="dk-stat-row"><span>stan</span><b>${kst.enabled ? 'AKTYWNY' : 'WYŁĄCZONY'}</b></div>
+            <div class="dk-stat-row"><span>StatTrak</span><b style="color:#ff6a2e">${kst.statTrak}</b></div>
+        `;
+    }
+
+    // ── INPUT HOOKS ────────────────────────────────────────────
+    document.addEventListener('mousedown', e => {
+        if (!kst.enabled || e.button !== 0) return;
+        triggerSwing('slash');
+    }, false);
+
+    document.addEventListener('keydown', e => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const menuHidden = document.getElementById('menu')?.hidden ?? true;
+
+        if (e.code === 'KeyC' && !e.repeat && menuHidden && S.timer.state.phase === 'running') {
+            e.preventDefault(); e.stopPropagation();
+            st.forceFinish = true;
+        }
+        if (e.code === 'KeyF' && !e.repeat) {
+            st.fullbright = !st.fullbright;
+            panel.querySelectorAll('.dk-toggle').forEach(t => {
+                if (t.textContent.includes('Full Bright')) t.classList.toggle('on', st.fullbright);
+            });
+            applyFullbright();
+            toast('Fullbright: ' + (st.fullbright ? 'ON' : 'OFF'));
+        }
+        if (!kst.enabled) return;
+        if (e.code === 'KeyV' && !e.repeat) { e.preventDefault(); triggerSwing('slash'); }
+        if (e.code === 'KeyB' && !e.repeat) { e.preventDefault(); triggerSwing('stab'); }
+    }, true);
+
+    // ── MINIMAP + STATS LOOP ──────────────────────────────────
+    function getMinimapBounds() {
+        const zones = S.timer.zones || [];
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        zones.forEach(z => {
+            minX = Math.min(minX, z.min.x); maxX = Math.max(maxX, z.max.x);
+            minY = Math.min(minY, z.min.y); maxY = Math.max(maxY, z.max.y);
+        });
+        if (!isFinite(minX)) {
+            const p = S.state.position;
+            minX = p.x - 1000; maxX = p.x + 1000;
+            minY = p.y - 1000; maxY = p.y + 1000;
+        }
+        const padX = (maxX - minX) * 0.15, padY = (maxY - minY) * 0.15;
+        return { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY };
+    }
+
+    function drawMinimap() {
+        if (!st.minimap) return;
+        const W = 180, H = 180;
+        const b = getMinimapBounds();
+        const w = b.maxX - b.minX, h = b.maxY - b.minY;
+        const scale = Math.min(W / w, H / h) * 0.9;
+        const offX = (W - w * scale) / 2, offY = (H - h * scale) / 2;
+        mmCtx.clearRect(0, 0, W, H);
+        mmCtx.fillStyle = 'rgba(6,6,14,0.85)';
+        mmCtx.fillRect(0, 0, W, H);
+        const toX = x => offX + (x - b.minX) * scale;
+        const toY = y => H - offY - (y - b.minY) * scale;
+
+        (S.timer.zones || []).forEach(z => {
+            mmCtx.strokeStyle = z.kind === 'finish' ? '#00ff88' :
+                                z.kind === 'start' ? '#00e5ff' : '#444';
+            mmCtx.lineWidth = 1.5;
+            mmCtx.beginPath();
+            mmCtx.rect(toX(z.min.x), toY(z.max.y),
+                       (z.max.x - z.min.x) * scale, (z.max.y - z.min.y) * scale);
+            mmCtx.stroke();
+        });
+        if (st.trail.length > 1) {
+            mmCtx.strokeStyle = 'rgba(185,51,255,0.5)';
+            mmCtx.lineWidth = 1.5;
+            mmCtx.beginPath();
+            st.trail.forEach((p, i) => {
+                const x = toX(p.x), y = toY(p.y);
+                if (i === 0) mmCtx.moveTo(x, y); else mmCtx.lineTo(x, y);
+            });
+            mmCtx.stroke();
+        }
+        const p = S.state.position;
+        mmCtx.fillStyle = '#fff';
+        mmCtx.beginPath();
+        mmCtx.arc(toX(p.x), toY(p.y), 3.5, 0, Math.PI * 2);
+        mmCtx.fill();
+        mmCtx.strokeStyle = '#b933ff';
+        mmCtx.lineWidth = 1.5;
+        mmCtx.stroke();
+    }
+
     setInterval(() => {
         const v = S.state.velocity;
         const p = S.state.position;
         const sp = Math.hypot(v.x, v.y);
-        const el = $('#d-stats');
-        if (el) {
-            el.innerHTML = `map: <b style="color:#fff">${S.map.id}</b><br>
-                prędkość: <b style="color:#81c784;font-size:13px">${sp.toFixed(1)}</b> u/s<br>
-                pos: ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}<br>
-                na ziemi: ${S.state.grounded ? 'TAK' : '<span style="color:#81c784">LOT</span>'}<br>
-                czas: <b style="color:#fff">${S.timer.state.elapsed.toFixed(3)}</b>s`;
+        const flying = !S.state.grounded;
+        const stats = $('#dk-stats');
+        if (stats) {
+            stats.innerHTML = `
+                <div class="dk-stat-row"><span>map</span><b>${S.map.id}</b></div>
+                <div class="dk-stat-row"><span>prędkość</span><span class="dk-speed ${flying ? 'flying' : ''}">${sp.toFixed(1)}</span></div>
+                <div class="dk-stat-row"><span>pos</span><b>${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}</b></div>
+                <div class="dk-stat-row"><span>stan</span><b>${flying ? 'LOT' : 'ZIEMIA'}</b></div>
+                <div class="dk-stat-row"><span>czas</span><b>${S.timer.state.elapsed.toFixed(3)}s</b></div>
+            `;
+        }
+        drawMinimap();
+
+        // Knife sway based on velocity (position offsets, not transform)
+        if (kst.enabled && !kst.swinging) {
+            const sway = Math.min(1, sp / 900);
+            vm.style.right = (20 - sway * 10) + 'px';
+            vm.style.bottom = (-90 + sway * 12) + 'px';
         }
     }, 100);
 
-    console.log('%c[docket] PEŁNY CHEAT AKTYWNY', 'color:#81c784;font-weight:bold;font-size:14px');
+    // ── INIT ──────────────────────────────────────────────────
+    applyCfg();
+    applyFov();
+    crosshairEl.style.setProperty('--xhair-color', st.crosshairColor);
+    renderKnife();
+    updateKnifeInfo();
+    renderStatTrak();
+
+    console.log('%c[docket] FULL CHEAT + KNIFE READY', 'color:#00e5ff;font-weight:bold;font-size:14px;text-shadow:0 0 8px #00e5ff');
+    console.log('%c[docket] features: 25+ | knife models: 8 | skins: 22', 'color:#b933ff;font-size:11px');
+    toast('Surfd Docket gotowy', 'success');
 })();
